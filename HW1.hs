@@ -173,46 +173,102 @@ splitOn c (x : xs) = if c == x then Just ("" , xs) else case splitOn c xs of
 -- Just ("foo","fooxfoo")
 
 
--- type Variable = String
--- data ParsedString = PlainString String | Variable String deriving Show
--- parseTemplate :: String -> Maybe [ParsedString]
--- parseTemplate [] = Just []
--- parseTemplate s = case splitOn '$' s of 
---     Nothing -> Just [ParsedString ]
---     Just (a, b) -> PlainString a : case splitOn '}' b of 
---         Just (c: cs, ds) -> Variable cs : ds  
---         _ -> Nothing
+type Variable = String
+data ParsedString = PlainString String | Variable String deriving Show
+parseTemplate :: String -> Maybe [ParsedString]
+parseTemplate "" = Just []
+parseTemplate str = case splitOn '$' str of
+  Nothing -> Just [PlainString str]
+  Just ("", "") -> Nothing
+  Just (prefix, "") -> Just [PlainString prefix]
+  Just (prefix, h:suffix) -> case h of
+    '{' -> case splitOn '}' suffix of
+        Just ("", _) -> Nothing
+        Nothing -> Nothing
+        Just (var, suffix2) -> case parseTemplate suffix2 of
+          Nothing -> Nothing
+          Just res -> Just (PlainString prefix : Variable var : res)
+    _ -> Nothing
 
--- type VariableName = String
--- type VariableValue = String
--- type MissingVariable = String
--- assignTemplate :: [(VariableName, VariableValue)] -> [ParsedString] -> Either MissingVariable String
+-- >>> parseTemplate "Hello${world}!"
+-- Just [PlainString "Hello",Variable "world",PlainString "!"]
+-- >>> parseTemplate "Hello${!"
+-- Nothing
+-- >>> parseTemplate "Hello$!"
+-- Nothing
 
--- data Error = MissingVar MissingVariable | InvalidTemplate deriving Show
--- interpolateString :: [(VariableName, VariableValue)] -> String -> Either Error String
+type VariableName = String
+type VariableValue = String
+type MissingVariable = String
+assignTemplate :: [(VariableName, VariableValue)] -> [ParsedString] -> Either MissingVariable String
+assignTemplate _ [] = Right ""
+assignTemplate values (Variable var : rest) = case lookup var values of
+    Nothing -> Left var
+    Just value -> case assignTemplate values rest of
+        Left res -> Left res
+        Right res -> Right (value ++ res)
+assignTemplate values (PlainString str : rest) = case assignTemplate values rest of
+    Left res -> Left res
+    Right res -> Right (str ++ res)
+
+-- >>> assignTemplate [] [ PlainString " Hello !"]
+-- >>> parsed = [ PlainString " Hello ", Variable " name ", PlainString "!"]
+-- >>> assignTemplate [(" name ", " Simon ")] parsed
+-- >>> assignTemplate [(" Name ", " Simon ")] parsed
+-- >>> assignTemplate [] [ Variable "x", Variable "y"]
+-- Right " Hello !"
+-- Right " Hello  Simon !"
+-- Left " name "
+-- Left "x"
+
+data Error = MissingVar MissingVariable | InvalidTemplate deriving Show
+interpolateString :: [(VariableName, VariableValue)] -> String -> Either Error String
+interpolateString values template = case parseTemplate template of
+    Nothing -> Left InvalidTemplate
+    Just parsedTemplate -> case assignTemplate values parsedTemplate of
+        Left var -> Left (MissingVar var)
+        Right str -> Right str
+
+-- >>> interpolateString [(" name ", " Simon ")] " Hello ${ name }!"
+-- >>> interpolateString [(" name ", " Simon ")] " Hello $name !"
+-- >>> interpolateString [(" Name ", " Simon ")] " Hello ${ name }!"
+-- Right " Hello  Simon !"
+-- Left InvalidTemplate
+-- Left (MissingVar " name ")
 
 
--- -- Section 4: N-queens problem
--- -- Queens and helpers.
--- -- range of a non-positive number is empty, range 3 is [0, 1, 2]
--- range :: Int -> [Int]
--- -- enumerate "foo" should return [(0, 'f'), (1, 'o'), (2, 'o')]
--- -- Hint: Use zip
--- enumerate :: [a] -> [(Int, a)]
--- -- Splits [1, 2, 3] should return [([1, 2, 3],[]), ([1, 2], [3]), ([1], [2, 3]), ([], [1, 2, 3]).
--- -- Order is important!
--- -- Hint: Splits [] is [([], [])].
--- splits :: [a] -> [([a], [a])]
--- -- permutations of [] is [[]]
--- -- permutations of [1, 2, 3] is [[1, 2, 3], [1, 3, 2], [2, 3, 1], [2, 1, 3], [3, 1, 2], [3, 2, 1]]
--- -- Hint: use splits
+-- Section 4: N-queens problem
+-- Queens and helpers.
+-- range of a non-positive number is empty, range 3 is [0, 1, 2]
+range :: Int -> [Int]
+range n = [0 .. n - 1]
+-- enumerate "foo" should return [(0, 'f'), (1, 'o'), (2, 'o')]
+-- Hint: Use zip
+enumerate :: [a] -> [(Int, a)]
+enumerate = zip [0 ..]
+-- Splits [1, 2, 3] should return [([1, 2, 3],[]), ([1, 2], [3]), ([1], [2, 3]), ([], [1, 2, 3]).
+-- Order is important!
+-- Hint: Splits [] is [([], [])].
+splits :: [a] -> [([a], [a])]
+splits [] = [([], [])]
+splits (prefix:suffix) = [(prefix:x, y) | (x, y) <- rest] ++ [([], prefix:suffix)]
+    where rest = splits suffix
+
+-- >>> splits [1,2,3]
+-- [([1,2,3],[]),([1,2],[3]),([1],[2,3]),([],[1,2,3])]
+
+-- permutations of [] is [[]]
+-- permutations of [1, 2, 3] is [[1, 2, 3], [1, 3, 2], [2, 3, 1], [2, 1, 3], [3, 1, 2], [3, 2, 1]]
+-- Hint: use splits
 -- -- order is not important
 -- permutations :: [a] -> [[a]]
+-- permutations [] = [[]]
+-- permutations xs = concat [map (x:) (permutations ys) | (x, ys) <- splits xs]
 
--- type Column = Int
--- type Solution = [Column]
--- -- Returns all the solutions the n-queens problem. Returns a list of solutions, each solution made
--- -- up up of column per row. For example, queens 1 returns [[0]], queens 2 and queens 3 return [],
--- -- queens 4 returns [[1,3,0,2],[2,0,3,1]].
--- -- Order is not important.
+type Column = Int
+type Solution = [Column]
+-- Returns all the solutions the n-queens problem. Returns a list of solutions, each solution made
+-- up up of column per row. For example, queens 1 returns [[0]], queens 2 and queens 3 return [],
+-- queens 4 returns [[1,3,0,2],[2,0,3,1]].
+-- Order is not important.
 -- queens :: Int -> [Solution]
