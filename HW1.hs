@@ -160,7 +160,7 @@ zip = zipWith (, )
 splitOn :: Char -> String -> Maybe (String, String)
 splitOn _ [] = Nothing
 splitOn c (x : xs) = if c == x then Just ("" , xs) else case splitOn c xs of
-    Just (prefix, suffix) -> Just (x : prefix, suffix)
+    Just (head, tail) -> Just (x : head, tail)
     _ -> Nothing
 
 -- >>> splitOn 'x' "foobar"
@@ -180,14 +180,14 @@ parseTemplate "" = Just []
 parseTemplate str = case splitOn '$' str of
   Nothing -> Just [PlainString str]
   Just ("", "") -> Nothing
-  Just (prefix, "") -> Just [PlainString prefix]
-  Just (prefix, h:suffix) -> case h of
-    '{' -> case splitOn '}' suffix of
+  Just (head, "") -> Just [PlainString head]
+  Just (head, h:tail) -> case h of
+    '{' -> case splitOn '}' tail of
         Just ("", _) -> Nothing
         Nothing -> Nothing
-        Just (var, suffix2) -> case parseTemplate suffix2 of
+        Just (var, tail2) -> case parseTemplate tail2 of
           Nothing -> Nothing
-          Just res -> Just (PlainString prefix : Variable var : res)
+          Just res -> Just (PlainString head : Variable var : res)
     _ -> Nothing
 
 -- >>> parseTemplate "Hello${world}!"
@@ -242,28 +242,43 @@ interpolateString values template = case parseTemplate template of
 -- range of a non-positive number is empty, range 3 is [0, 1, 2]
 range :: Int -> [Int]
 range n = [0 .. n - 1]
+-- >>> range 4
+-- []
+
 -- enumerate "foo" should return [(0, 'f'), (1, 'o'), (2, 'o')]
 -- Hint: Use zip
 enumerate :: [a] -> [(Int, a)]
 enumerate = zip [0 ..]
+-- >>> enumerate (range 4)
+
+
 -- Splits [1, 2, 3] should return [([1, 2, 3],[]), ([1, 2], [3]), ([1], [2, 3]), ([], [1, 2, 3]).
 -- Order is important!
 -- Hint: Splits [] is [([], [])].
 splits :: [a] -> [([a], [a])]
 splits [] = [([], [])]
-splits (prefix:suffix) = [(prefix:x, y) | (x, y) <- rest] ++ [([], prefix:suffix)]
-    where rest = splits suffix
+splits (head:tail) = [(head:x, y) | (x, y) <- rest] ++ [([], head:tail)]
+    where rest = splits tail
 
 -- >>> splits [1,2,3]
 -- [([1,2,3],[]),([1,2],[3]),([1],[2,3]),([],[1,2,3])]
+-- >>> splits [1,2]
+-- [([1,2],[]),([1],[2]),([],[1,2])]
 
 -- permutations of [] is [[]]
 -- permutations of [1, 2, 3] is [[1, 2, 3], [1, 3, 2], [2, 3, 1], [2, 1, 3], [3, 1, 2], [3, 2, 1]]
 -- Hint: use splits
 -- -- order is not important
--- permutations :: [a] -> [[a]]
--- permutations [] = [[]]
--- permutations xs = concat [map (x:) (permutations ys) | (x, ys) <- splits xs]
+permutations :: [a] -> [[a]]
+permutations [] = [[]]
+permutations (head:tail) = concatMap (insertItem head) (permutations tail)
+  where
+    insertItem :: a -> [a] -> [[a]]
+    insertItem item [] = [[item]]
+    insertItem item (head2:tail2) = (item:head2:tail2) : map (head2:) (insertItem item tail2)
+
+-- >>> permutations [1,3,4]
+-- [[1,3,4],[3,1,4],[3,4,1],[1,4,3],[4,1,3],[4,3,1]]
 
 type Column = Int
 type Solution = [Column]
@@ -271,4 +286,15 @@ type Solution = [Column]
 -- up up of column per row. For example, queens 1 returns [[0]], queens 2 and queens 3 return [],
 -- queens 4 returns [[1,3,0,2],[2,0,3,1]].
 -- Order is not important.
--- queens :: Int -> [Solution]
+queens :: Int -> [Solution]
+queens n = filter checkValidSolution $ permutations (range n)
+    where
+        checkValidSolution ::Solution -> Bool
+        checkValidSolution [] = True
+        checkValidSolution solution = not (any checkPair ([(x, y) | x <- enumerate solution, y <- enumerate solution, x < y]))
+
+        checkPair :: ((Int, Int), (Int, Int)) -> Bool
+        checkPair ((col1,row1), (col2,row2)) = abs (col1 - col2) == abs (row1 - row2)
+
+-- >>> queens 4
+-- [[2,0,3,1],[1,3,0,2]]
